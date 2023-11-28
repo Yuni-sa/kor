@@ -41,7 +41,10 @@ func getResourcesWithFinalizersPendingDeletion(clientset kubernetes.Interface, d
 		for _, resourceType := range apiResourceList.APIResources {
 			if resourceType.Namespaced && slices.Contains(resourceType.Verbs, "list") {
 				gvr := gv.WithResource(resourceType.Name)
-				resourceList, err := dynamicClient.Resource(gvr).Namespace(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
+				resourceList, err := dynamicClient.
+					Resource(gvr).
+					Namespace(metav1.NamespaceAll).
+					List(context.TODO(), metav1.ListOptions{})
 				if err != nil {
 					fmt.Printf("Error listing resources for GVR %s: %v\n", apiResourceList.GroupVersion, err)
 					continue
