@@ -22,8 +22,8 @@ func CheckFinalizers(finalizers []string, deletionTimestamp *metav1.Time) bool {
 	return false
 }
 
-func getResourcesWithFinalizersPendingDeletion(clientset kubernetes.Interface, dynamicClient dynamic.Interface, namespaces []string, filterOpts *FilterOptions) (map[string]map[string][]string, error) {
-	pendingDeletionResources := make(map[string]map[string][]string)
+func getResourcesWithFinalizersPendingDeletion(clientset kubernetes.Interface, dynamicClient dynamic.Interface, namespaces []string, filterOpts *FilterOptions) (map[string]map[schema.GroupVersionResource][]string, error) {
+	pendingDeletionResources := make(map[string]map[schema.GroupVersionResource][]string) //map[namespace]map[gvr][]resourceNames
 
 	// Use the discovery client to fetch API resources
 	resourceTypes, err := clientset.Discovery().ServerPreferredResources()
@@ -40,7 +40,8 @@ func getResourcesWithFinalizersPendingDeletion(clientset kubernetes.Interface, d
 
 		for _, resourceType := range apiResourceList.APIResources {
 			if resourceType.Namespaced && slices.Contains(resourceType.Verbs, "list") {
-				resourceList, err := dynamicClient.Resource(gv.WithResource(resourceType.Name)).Namespace(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
+				gvr := gv.WithResource(resourceType.Name)
+				resourceList, err := dynamicClient.Resource(gvr).Namespace(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
 				if err != nil {
 					fmt.Printf("Error listing resources for GVR %s: %v\n", apiResourceList.GroupVersion, err)
 					continue
@@ -64,9 +65,9 @@ func getResourcesWithFinalizersPendingDeletion(clientset kubernetes.Interface, d
 
 					if CheckFinalizers(item.GetFinalizers(), item.GetDeletionTimestamp()) {
 						if pendingDeletionResources[item.GetNamespace()] == nil {
-							pendingDeletionResources[item.GetNamespace()] = make(map[string][]string)
+							pendingDeletionResources[item.GetNamespace()] = make(map[schema.GroupVersionResource][]string)
 						}
-						pendingDeletionResources[item.GetNamespace()][resourceType.Name] = append(pendingDeletionResources[item.GetNamespace()][resourceType.Name], item.GetName())
+						pendingDeletionResources[item.GetNamespace()][gvr] = append(pendingDeletionResources[item.GetNamespace()][gvr], item.GetName())
 					}
 				}
 			}
@@ -84,20 +85,22 @@ func GetUnusedfinalizers(includeExcludeLists IncludeExcludeLists, filterOpts *Fi
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to process resources waiting for finalizers: %v\n", err)
 	}
+	allDiffs := make(map[string][]string)
 	for namespace, data := range resourceDiffs {
 		if slices.Contains(namespaces, namespace) {
-			for resourceType, resourceDiff := range data {
+			for gvr, resourceDiff := range data {
 				if opts.DeleteFlag {
-					if resourceDiff, err = DeleteResourceWithFinalizer(resourceDiff, clientset, dynamicClient, namespace, resourceType, opts.NoInteractive); err != nil {
+					if resourceDiff, err = DeleteResourceWithFinalizer(resourceDiff /*, clientset*/, dynamicClient, namespace, gvr, opts.NoInteractive); err != nil {
 						fmt.Fprintf(os.Stderr, "Failed to delete objects waiting for Finalizers %s in namespace %s: %v\n", resourceDiff, namespace, err)
 					}
 				}
+				allDiffs[gvr.Resource] = resourceDiff
 			}
-			output := FormatOutputFromMap(namespace, data, opts)
+			output := FormatOutputFromMap(namespace, allDiffs, opts)
 			outputBuffer.WriteString(output)
 			outputBuffer.WriteString("\n")
 
-			response[namespace] = data
+			response[namespace] = allDiffs
 		}
 	}
 	jsonResponse, err := json.MarshalIndent(response, "", "  ")
