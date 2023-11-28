@@ -60,6 +60,28 @@ func DeleteResourceCmd() map[string]func(clientset kubernetes.Interface, namespa
 	return deleteResourceApiMap
 }
 
+func FlagDynamicResource(dynamicClient dynamic.Interface, namespace string, gvr schema.GroupVersionResource, resourceName string) error {
+	resource, err := dynamicClient.
+		Resource(gvr).
+		Namespace(namespace).
+		Get(context.TODO(), resourceName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	labels := resource.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	labels["kor/used"] = "true"
+	resource.SetLabels(labels)
+	_, err = dynamicClient.
+		Resource(gvr).
+		Namespace(namespace).
+		Update(context.TODO(), resource, metav1.UpdateOptions{})
+	return err
+}
+
 func FlagResource(clientset kubernetes.Interface, namespace, resourceType, resourceName string) error {
 	resource, err := getResource(clientset, namespace, resourceType, resourceName)
 	if err != nil {
@@ -155,20 +177,20 @@ func DeleteResourceWithFinalizer(diff []string /*, clientset kubernetes.Interfac
 			if strings.ToLower(confirmation) != "y" && strings.ToLower(confirmation) != "yes" {
 				deletedDiff = append(deletedDiff, resourceName)
 
-				//fmt.Printf("Do you want flag the resource %s %s in namespace %s as In Use? (Y/N): ", resourceType, resourceName, namespace)
-				//var inUse string
-				//_, err := fmt.Scanf("%s", &inUse)
-				//if err != nil {
-				//	fmt.Fprintf(os.Stderr, "Failed to read input: %v\n", err)
-				//	continue
-				//}
-				//
-				//if strings.ToLower(inUse) == "y" || strings.ToLower(inUse) == "yes" {
-				//	if err := FlagResource(clientset, namespace, resourceType, resourceName); err != nil {
-				//		fmt.Fprintf(os.Stderr, "Failed to flag resource %s %s in namespace %s as In Use: %v\n", resourceType, resourceName, namespace, err)
-				//	}
-				//	continue
-				//}
+				fmt.Printf("Do you want flag the resource %s %s in namespace %s as In Use? (Y/N): ", gvr.Resource, resourceName, namespace)
+				var inUse string
+				_, err := fmt.Scanf("%s", &inUse)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to read input: %v\n", err)
+					continue
+				}
+
+				if strings.ToLower(inUse) == "y" || strings.ToLower(inUse) == "yes" {
+					if err := FlagDynamicResource(dynamicClient, namespace, gvr, resourceName); err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to flag resource %s %s in namespace %s as In Use: %v\n", gvr.Resource, resourceName, namespace, err)
+					}
+					continue
+				}
 				continue
 			}
 		}
