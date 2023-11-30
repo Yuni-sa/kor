@@ -160,7 +160,7 @@ func getResource(clientset kubernetes.Interface, namespace, resourceType, resour
 	return nil, fmt.Errorf("resource type '%s' is not supported", resourceType)
 }
 
-func DeleteResourceWithFinalizer(diff []string /*, clientset kubernetes.Interface*/, dynamicClient dynamic.Interface, namespace string, gvr schema.GroupVersionResource, noInteractive bool) ([]string, error) {
+func DeleteResourceWithFinalizer(diff []string, dynamicClient dynamic.Interface, namespace string, gvr schema.GroupVersionResource, noInteractive bool) ([]string, error) {
 	deletedDiff := []string{}
 
 	for _, resourceName := range diff {
